@@ -9,10 +9,22 @@ use Kgkg\MigrationManager\MigrationManager;
 
 final class MigrationRunTest extends MigrationManagerTestCase
 {
+    public function test_session_guard_runs_before_lock_or_history_access(): void
+    {
+        $db = $this->createConnectionMock();
+        $db->expects($this->once())->method('assertMigrationSession')
+            ->willThrowException(new ConnectionException('Active transaction'));
+        $db->expects($this->never())->method('getMigrationLockName');
+        $db->expects($this->never())->method('fetchValue');
+        $db->expects($this->never())->method('execute');
+        $this->expectException(ConnectionException::class);
+        (new MigrationManager($db, $this->temporaryDirectory))->runPending();
+    }
+
     /** @dataProvider invalidOptions */
     public function test_rejects_invalid_options_without_database_access(string $table, int $timeout): void
     {
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->expects($this->never())->method('getDatabaseName');
         $db->expects($this->never())->method('fetchValue');
         $this->expectException(MigrationException::class);
@@ -28,7 +40,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
     /** @dataProvider lockFailures */
     public function test_failed_lock_does_not_write_or_release($result): void
     {
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('test_database');
         $db->expects($this->once())->method('fetchValue')->with('SELECT GET_LOCK(?, ?)',
             ['migration_manager_' . sha1("test_database\0custom_history"), 3])->willReturn($result);
@@ -45,7 +57,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
 
     public function test_acquisition_exception_is_preserved_without_release(): void
     {
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $failure = new ConnectionException('Lock query failed');
         $db->expects($this->once())->method('fetchValue')->with('SELECT GET_LOCK(?, ?)',
@@ -59,7 +71,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
     public function test_unsuccessful_release_is_reported_and_manager_state_is_reset($releaseResult): void
     {
         $table = '_' . str_repeat('a', 63);
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $lock = 'migration_manager_' . sha1("unit_database\0" . $table);
         $db->expects($this->exactly(4))->method('fetchValue')
@@ -87,7 +99,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
     public function test_loader_error_releases_lock(): void
     {
         $this->writeMigrationFile('20260714120000_unit_missing_migration_class.php');
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $db->expects($this->exactly(2))->method('fetchValue')->withConsecutive(
             ['SELECT GET_LOCK(?, ?)', $this->isType('array')],
@@ -112,7 +124,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
         $events = [];
         $failure = new ConnectionException('Primary failure');
         $releaseFailure = new ConnectionException('Release failure');
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $lockName = 'migration_manager_' . sha1("unit_database\0schema_migrations");
         $db->expects($this->exactly(2))->method('fetchValue')->willReturnCallback(

@@ -9,6 +9,51 @@ final class MigrationCreatorTest extends MigrationManagerTestCase
 {
     private const CURRENT_TIMESTAMP = 1784023200;
 
+    public function test_creation_lock_prevents_competing_versions_and_allows_retry(): void
+    {
+        $creator = $this->createCreator();
+        $interleaved = new MigrationCreator($this->temporaryDirectory, function () use ($creator): int {
+            try {
+                $creator->create('second');
+                $this->fail('Competing creator must not enter the critical section.');
+            } catch (MigrationException $error) {
+                $this->assertStringContainsString('Another process', $error->getMessage());
+            }
+            return self::CURRENT_TIMESTAMP;
+        });
+        $first = $interleaved->create('first');
+        $second = $creator->create('second');
+        $this->assertNotSame(substr(basename($first), 0, 14), substr(basename($second), 0, 14));
+        $this->assertCount(2, (new \Kgkg\MigrationManager\MigrationRepository($this->temporaryDirectory))->findAll());
+    }
+
+    public function test_class_name_collision_between_migrations_is_rejected(): void
+    {
+        $creator = $this->createCreator();
+        $creator->create('add users');
+        try {
+            $creator->create('addusers');
+            $this->fail('PHP class names are case insensitive.');
+        } catch (MigrationException $error) {
+            $this->assertStringContainsString('class Addusers already exists', $error->getMessage());
+        }
+        // Failure must release the lock for the next command.
+        $this->assertFileExists($creator->create('different'));
+    }
+
+    /** @dataProvider occupiedNames */
+    public function test_existing_php_symbols_are_rejected(string $name): void
+    {
+        $this->expectException(MigrationException::class);
+        $this->expectExceptionMessage('already in use');
+        $this->createCreator()->create($name);
+    }
+
+    public function occupiedNames(): array
+    {
+        return [['Exception'], ['Throwable'], ['Iterator'], ['stdClass']];
+    }
+
     /**
      * @runInSeparateProcess
      * @preserveGlobalState disabled
@@ -17,7 +62,7 @@ final class MigrationCreatorTest extends MigrationManagerTestCase
     {
         // Simulate another process creating the target immediately before it is opened.
         eval('namespace Kgkg\\MigrationManager; function fopen($path, $mode) {'
-            . '\\file_put_contents($path, "concurrent user changes"); return \\fopen($path, $mode); }');
+            . 'if ($mode === "x") { \\file_put_contents($path, "concurrent user changes"); } return \\fopen($path, $mode); }');
         try {
             $this->createCreator()->create('concurrent');
             $this->fail('Exclusive creation must fail.');

@@ -152,6 +152,37 @@ final class MysqliConnection implements ConnectionInterface
         return $database;
     }
 
+    public function assertMigrationSession(): void
+    {
+        if ((int)$this->fetchValue('SELECT @@SESSION.autocommit') !== 1) {
+            throw new ConnectionException('Migrations require autocommit enabled and no active transaction.');
+        }
+        // MySQL does not expose @@in_transaction. A savepoint exists only inside
+        // a transaction; unlike DDL or START TRANSACTION this probe never commits.
+        $savepoint = 'migration_probe_' . bin2hex(random_bytes(16));
+        $this->execute('SAVEPOINT `' . $savepoint . '`');
+        try {
+            $this->execute('RELEASE SAVEPOINT `' . $savepoint . '`');
+        } catch (ConnectionException $error) {
+            if ($error->getCode() === 1305) {
+                return; // No transaction, hence no savepoint to release.
+            }
+            throw $error;
+        }
+        throw new ConnectionException('Migrations cannot run inside an active transaction.');
+    }
+
+    public function getMigrationLockName(string $tableName): string
+    {
+        $database = $this->getDatabaseName();
+        if ((int)$this->fetchValue('SELECT @@lower_case_table_names') !== 0) {
+            // Use the server's Unicode case conversion for database identifiers.
+            $database = (string)$this->fetchValue('SELECT LOWER(?)', [$database]);
+            $tableName = strtolower($tableName);
+        }
+        return 'migration_manager_' . sha1($database . "\0" . $tableName);
+    }
+
     /** @return list<array<string, null|int|float|string>> */
     private function query(string $sql, array $parameters, bool $fetch, bool $firstColumn = false): array
     {

@@ -8,6 +8,12 @@ namespace Kgkg\MigrationManager\Connection;
  */
 interface ConnectionInterface
 {
+    /** Reject active transactions and disabled autocommit without committing caller work. */
+    public function assertMigrationSession(): void;
+
+    /** Return a shared advisory lock name for the database/history table's physical identity. */
+    public function getMigrationLockName(string $tableName): string;
+
     /** Execute zero or more SQL statements, consuming and freeing all results. */
     public function execute(string $sql): void;
 

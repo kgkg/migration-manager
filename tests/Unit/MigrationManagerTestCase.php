@@ -11,6 +11,15 @@ use SplFileInfo;
 
 abstract class MigrationManagerTestCase extends TestCase
 {
+    protected function createConnectionMock(): \PHPUnit\Framework\MockObject\MockObject
+    {
+        $mock = $this->createMock(\Kgkg\MigrationManager\Connection\ConnectionInterface::class);
+        $mock->method('getMigrationLockName')->willReturnCallback(static function (string $table) use ($mock): string {
+            return 'migration_manager_' . sha1($mock->getDatabaseName() . "\0" . $table);
+        });
+        return $mock;
+    }
+
     protected string $temporaryDirectory;
 
     protected function setUp(): void

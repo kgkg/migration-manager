@@ -26,10 +26,31 @@ final class MigrationCreator
         $this->validateClassName($className);
 
         $this->ensureDirectoryExists();
+        // Keep this file in place: unlinking it would allow locks on different inodes.
+        $lock = @fopen($this->directory . DIRECTORY_SEPARATOR . '.migration-manager-create.lock', 'c');
+        if ($lock === false) {
+            throw new MigrationException('Unable to open the migration creation lock.');
+        }
+        try {
+            if (!flock($lock, LOCK_EX | LOCK_NB)) {
+                throw new MigrationException('Another process is creating a migration. Retry the command.');
+            }
+            return $this->createLocked($migrationName, $className);
+        } finally {
+            fclose($lock);
+        }
+    }
+
+    private function createLocked(string $migrationName, string $className): string
+    {
         foreach ($this->entries() as $entry) {
             $suffix = '_' . $migrationName . '.php';
             if (substr($entry, -strlen($suffix)) === $suffix) {
                 throw new MigrationException("A migration named {$migrationName} already exists.");
+            }
+            if (preg_match('/^\d{14}_([a-z][a-z0-9_]*)\.php$/D', $entry, $matches)
+                && strcasecmp($className, $this->classNameFromMigrationName($matches[1])) === 0) {
+                throw new MigrationException('A migration with class ' . $className . ' already exists.');
             }
         }
 
@@ -79,6 +100,9 @@ final class MigrationCreator
 
     private function validateClassName(string $name): void
     {
+        if (class_exists($name) || interface_exists($name) || trait_exists($name)) {
+            throw new MigrationException('The migration class name is already in use: ' . $name);
+        }
         $tokens = token_get_all('<?php ' . $name);
         if ($tokens[1][0] !== T_STRING || in_array(strtolower($name), [
             'self', 'parent', 'static', 'int', 'float', 'bool', 'string', 'true', 'false',

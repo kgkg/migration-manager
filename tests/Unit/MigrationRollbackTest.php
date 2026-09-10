@@ -15,7 +15,7 @@ final class MigrationRollbackTest extends MigrationManagerTestCase
         $path = (new \Kgkg\MigrationManager\MigrationCreator($this->temporaryDirectory))
             ->create('generated rollback ' . bin2hex(random_bytes(6)));
         $version = substr(basename($path), 0, 14);
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $db->method('fetchAll')->willReturn([['version' => $version]]);
         $db->expects($this->exactly(2))->method('fetchValue')->withConsecutive(
@@ -30,7 +30,7 @@ final class MigrationRollbackTest extends MigrationManagerTestCase
     /** @dataProvider invalidSteps */
     public function test_invalid_steps_do_not_access_database(int $steps): void
     {
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->expects($this->never())->method('getDatabaseName');
         $db->expects($this->never())->method('fetchValue');
         $this->expectException(MigrationException::class);
@@ -55,7 +55,7 @@ final class MigrationRollbackTest extends MigrationManagerTestCase
                 '<?php final class ' . ucfirst($name) . ' extends \\Kgkg\\MigrationManager\\AbstractMigration {'
                 . 'public function up(): void {} public function down(): void {' . $down . '}}');
         }
-        $db = $this->createMock(ConnectionInterface::class);
+        $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
         $db->expects($this->exactly(2))->method('fetchValue')->withConsecutive(
             ['SELECT GET_LOCK(?, ?)', $this->isType('array')],

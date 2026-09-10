@@ -11,6 +11,58 @@ use Kgkg\MigrationManager\Tests\Unit\MigrationManagerTestCase;
 
 final class MigrationManagerTest extends MigrationManagerTestCase
 {
+    /** @dataProvider unsafeSessions */
+    public function test_unsafe_session_is_rejected_without_committing_caller_work(string $state, string $operation): void
+    {
+        $this->db->execute("CREATE TABLE `{$this->effects}` (id INT) ENGINE=InnoDB");
+        $this->db->execute($state === 'autocommit' ? 'SET autocommit=0' : 'START TRANSACTION');
+        try {
+            if ($state !== 'empty') {
+                $this->db->execute("INSERT INTO `{$this->effects}` VALUES (1)");
+            }
+            try {
+                $this->manager()->{$operation}();
+                $this->fail('Unsafe session must be rejected.');
+            } catch (ConnectionException $error) {
+                $this->assertStringContainsString('transaction', $error->getMessage());
+            }
+            $this->assertFalse((new MigrationHistory($this->other, $this->table))->exists());
+            $this->assertSame(0, (int)$this->other->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+            // Pending caller work is still present in its own session until rollback.
+            $this->assertSame($state === 'empty' ? 0 : 1,
+                (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+        } finally {
+            $this->db->execute('ROLLBACK; SET autocommit=1');
+        }
+        $this->assertSame(0, (int)$this->other->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+        $this->assertSame([], $this->manager()->{$operation}());
+    }
+
+    public function unsafeSessions(): array
+    {
+        return [['active', 'runPending'], ['active', 'rollback'], ['empty', 'runPending'],
+            ['empty', 'rollback'], ['autocommit', 'runPending'], ['autocommit', 'rollback']];
+    }
+
+    public function test_case_aliases_share_a_lock_on_case_insensitive_servers(): void
+    {
+        $lower = $this->db->getMigrationLockName($this->table);
+        $upper = $this->other->getMigrationLockName(strtoupper($this->table));
+        if ((int)$this->db->fetchValue('SELECT @@lower_case_table_names') === 0) {
+            $this->assertNotSame($lower, $upper);
+            return;
+        }
+        $this->assertSame($lower, $upper);
+        $this->assertSame(1, (int)$this->db->fetchValue('SELECT GET_LOCK(?, 0)', [$lower]));
+        try {
+            $this->expectException(MigrationException::class);
+            $this->expectExceptionMessage('Another process');
+            (new MigrationManager($this->other, $this->temporaryDirectory, strtoupper($this->table)))->runPending();
+        } finally {
+            $this->db->fetchValue('SELECT RELEASE_LOCK(?)', [$lower]);
+        }
+    }
+
     private MysqliConnection $db;
     private MysqliConnection $other;
     private string $table;

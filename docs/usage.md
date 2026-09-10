@@ -66,6 +66,17 @@ example `class`, `string`, `match`) are rejected before creating a file;
 existing valid migration class names keep their format. The `tokenizer`
 extension is required for keyword validation.
 
+Names already occupied by PHP classes, interfaces or traits (including symbols
+resolved by the application's autoloader) are rejected. Filenames are also checked
+for class-name collisions without executing their PHP code: `add_users` and
+`addusers` cannot coexist because PHP class names are case insensitive.
+
+Creation uses `.migration-manager-create.lock` in the migration directory and
+fails immediately on contention; retry the command after the other creator exits.
+The lock covers name validation against existing files, version selection and
+exclusive file creation. Keep the lock file in place while creators can run;
+it contains no migration data and may be ignored by version control.
+
 ## CLI details
 
 `--config file.php` and `--config=file.php` select a configuration, including for
@@ -132,6 +143,19 @@ Your application owns that connection. Connections created by `connect()` are
 owned by the adapter and close when the adapter is destroyed. Neither path
 reconnects automatically. Keep one session for the entire operation.
 
+`runPending()` and `rollback()` require autocommit enabled and no active
+transaction. The MySQLi adapter checks this before lock acquisition or history
+DDL, including transactions started directly on the borrowed native connection.
+Rejected calls leave caller work and savepoints intact. Finish the application's
+transaction first, or use a separate connection for migrations. Migration SQL
+must not leave the session in a transaction or disable autocommit.
+
+Database locks normalize database and history identifiers when the server's
+`lower_case_table_names` is nonzero; case-sensitive servers retain distinct
+locks for distinct tables. Avoid overlapping old and upgraded migration runners
+during deployment, since older runners may calculate different lock names for
+uppercase identifiers.
+
 ## Migration helpers
 
 Migrations extend `AbstractMigration` and implement `public up(): void` and
@@ -180,7 +204,7 @@ mark a migration irreversible.
 
 ## Custom connection adapter
 
-Implement all six methods of
+Implement all eight methods of
 [`ConnectionInterface`](../src/Connection/ConnectionInterface.php), then return
 your instance from the configuration's `connection` callable, or pass it to
 `new MigrationManager($connection, $directory)`. Register your class with your
@@ -189,6 +213,15 @@ application's Composer autoloader. No package source changes are needed.
 The adapter must retain one MySQL session across lock, SQL and history operations,
 consume all SQL results, report failures as `ConnectionException`, and return
 plain PHP values. Follow the [connection contract](implementation-decisions.md).
+Custom adapters upgrading from the earlier interface must additionally implement:
+
+- `assertMigrationSession(): void`: throw before any migration work if autocommit
+  is disabled or a transaction is active; the check must never commit caller work.
+- `getMigrationLockName(string $tableName): string`: return one stable advisory
+  lock name for every alias of the same database/history table, respecting the
+  server's identifier case rules. The MySQLi adapter uses `migration_manager_`
+  plus SHA-1 of the normalized database, a NUL separator, and normalized table.
+
 The history and locking SQL is MySQL-specific; this extension point does not
 provide support for other database engines or remove required PHP extensions.
 

@@ -143,7 +143,8 @@ final class MigrationManager
         if ($this->acquiredLockName !== null) {
             throw new MigrationException('This manager is already running migrations.');
         }
-        $lockName = 'migration_manager_' . sha1($this->database->getDatabaseName() . "\0" . $this->tableName);
+        $this->database->assertMigrationSession();
+        $lockName = $this->database->getMigrationLockName($this->tableName);
         $result = $this->database->fetchValue('SELECT GET_LOCK(?, ?)', [$lockName, $this->lockTimeout]);
         if ((int)$result !== 1) {
             throw new MigrationException($result === null

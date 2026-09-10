@@ -13,7 +13,7 @@ final class MigrationManagerTest extends MigrationManagerTestCase
         $this->writeMigrationFile('20260714120001_add_user_profiles.php');
         $this->writeMigrationFile('20260714120000_create_users.php');
 
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createConnectionMock();
         $database->expects($this->never())->method('execute');
         $database->expects($this->never())->method('executePrepared');
         $database->expects($this->never())->method('getDatabaseName');
@@ -42,7 +42,7 @@ final class MigrationManagerTest extends MigrationManagerTestCase
         $this->writeMigrationFile('20260714120001_add_user_profiles.php');
         $this->writeMigrationFile('20260714120002_create_clans.php');
 
-        $database = $this->createMock(ConnectionInterface::class);
+        $database = $this->createConnectionMock();
         $database->expects($this->never())->method('execute');
         $database->expects($this->never())->method('executePrepared');
         $database->expects($this->never())->method('getDatabaseName');

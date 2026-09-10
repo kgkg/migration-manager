@@ -139,6 +139,11 @@ Wrapping DDL in a transaction does not guarantee recovery. Concurrent run and
 rollback commands share a database lock; the default is to fail immediately
 when another process holds it.
 
+Run migrations on a connection with autocommit enabled and no active transaction.
+The manager rejects unsafe sessions before touching history, including borrowed
+MySQLi connections. Concurrent `create` commands share a filesystem lock; retry
+if another command is already creating a migration.
+
 ## More information
 
 - [Configuration, PHP API and custom connections](docs/usage.md)

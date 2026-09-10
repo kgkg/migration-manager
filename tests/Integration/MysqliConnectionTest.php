@@ -10,6 +10,33 @@ final class MysqliConnectionTest extends TestCase
 {
     private int $reportMode;
 
+    /** @dataProvider reportingModes */
+    public function testBorrowedTransactionAndCallerSavepointSurviveSessionGuard(int $mode): void
+    {
+        mysqli_report($mode);
+        $parameters = $this->parameters();
+        $native = new \mysqli($parameters['host'], $parameters['username'], $parameters['password'],
+            $parameters['database'], $parameters['port']);
+        $adapter = new MysqliConnection($native);
+        try {
+            $native->begin_transaction();
+            $native->savepoint('caller_savepoint');
+            try {
+                $adapter->assertMigrationSession();
+                $this->fail('The native caller transaction must be detected.');
+            } catch (ConnectionException $error) {
+                $this->assertStringContainsString('active transaction', $error->getMessage());
+            }
+            $this->assertTrue($native->release_savepoint('caller_savepoint'));
+            $native->rollback();
+            $adapter->assertMigrationSession();
+            $this->assertSame(1, (int)$adapter->fetchValue('SELECT @@SESSION.autocommit'));
+        } finally {
+            $native->rollback();
+            $native->close();
+        }
+    }
+
     protected function setUp(): void
     {
         $this->reportMode = (new \mysqli_driver())->report_mode;

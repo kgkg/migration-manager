@@ -35,6 +35,37 @@ removed in a finally block.
 
 ## Recorded results
 
+### Second audit fixes — 2026-09-10
+
+Verified on Windows with MySQL 8.4.9, PHP 7.4.33 and PHP 8.1.31:
+
+- Unit suite: 213 tests / 724 assertions on each PHP version.
+- Integration suite: 65 tests / 481 assertions on each PHP version.
+- Installed consumer cycle: passed on both PHP versions.
+
+New regression coverage:
+
+- `MigrationManagerTest::test_unsafe_session_is_rejected_without_committing_caller_work`
+  covers run and rollback with a pending write, an empty explicit transaction,
+  and disabled autocommit. Caller changes remain pending until caller rollback;
+  rejected calls do not create history, and the manager works after cleanup.
+- `MysqliConnectionTest::testBorrowedTransactionAndCallerSavepointSurviveSessionGuard`
+  uses native MySQLi transaction/savepoint methods with all three reporting modes.
+- `MigrationManagerTest::test_case_aliases_share_a_lock_on_case_insensitive_servers`
+  verifies contention across two sessions on Windows; on case-sensitive servers
+  it verifies that distinct identifiers retain distinct lock names.
+- `MigrationCreatorTest::test_creation_lock_prevents_competing_versions_and_allows_retry`
+  interleaves two creators at timestamp selection and checks fail-fast contention,
+  lock release, retry and distinct versions.
+- Generator tests reject occupied built-in classes/interfaces and case-insensitive
+  class collisions between migration filenames; a failed creation releases its lock.
+- `MigrationRunTest::test_session_guard_runs_before_lock_or_history_access`
+  verifies ordering independently of the driver.
+
+Custom adapters must implement the two new `ConnectionInterface` methods;
+see the migration notes in [usage.md](usage.md#custom-connection-adapter).
+The updated code has not yet been verified by a remote Linux/PHP 8.4 CI run.
+
 ### Package audit fixes — 2026-09-10
 
 Regression coverage for the four audit findings:
