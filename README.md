@@ -141,6 +141,7 @@ when another process holds it.
 - [Testing and verified compatibility](docs/testing.md)
 
 Locally verified: PHP 7.4.33 and 8.1.31 on Windows with MySQL 8.4.9.
-Linux and PHP 8.4 CI runs remain unverified. MariaDB compatibility is not claimed.
+CI verified: PHP 7.4, 8.1 and 8.4 on Linux with MySQL 8.4.
+MariaDB compatibility is not claimed.
 
 Licensed under the [MIT license](LICENSE).

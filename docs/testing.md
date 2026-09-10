@@ -43,8 +43,10 @@ On 2026-09-10, Windows with MySQL 8.4.9 passed on PHP 7.4.33 and PHP 8.1.31:
 | Integration suite, including lock contention | 53 tests, 429 assertions |
 | Composer consumer installation and CLI cycle | Passed, including Windows proxy |
 
-The GitHub Actions workflow targets Linux with MySQL 8.4 and PHP 7.4, 8.1 and
-8.4. Those hosted jobs have not yet been executed as part of this verification.
-PHP 8.4 and Linux therefore remain unverified; a workflow definition alone is
-not evidence of compatibility. MariaDB has not been tested. The Composer PHP
+The user confirmed that all GitHub Actions matrix jobs passed on Linux with
+MySQL 8.4 and PHP 7.4, 8.1 and 8.4. Each job includes the unit suite, integration
+suite and Composer consumer cycle. This records the reported CI results; CI logs
+were not independently inspected during this update.
+
+MariaDB has not been tested. The Composer PHP
 constraint expresses install eligibility, not verification of every PHP 8 release.
