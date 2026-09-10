@@ -35,6 +35,40 @@ removed in a finally block.
 
 ## Recorded results
 
+### Package audit fixes — 2026-09-10
+
+Regression coverage for the four audit findings:
+
+| Finding | Regression evidence |
+| --- | --- |
+| Brackets in directory paths and overwritten files | `MigrationCreatorTest::test_literal_directory_discovery_and_duplicate_protection` creates and discovers two migrations in `app[1]`, checks version advancement and preserves edited content on duplicate creation. `test_file_appearing_between_discovery_and_write_is_not_overwritten` simulates a competing write just before opening the target. |
+| Missing verified TLS | `TlsConnectionTest` connects to a real MySQL server, checks its negotiated cipher and rejects an untrusted certificate. `MysqliConnectionTest` rejects invalid CA settings before connecting. |
+| Empty generated rollback | `MigrationRollbackTest::test_generated_down_preserves_history_and_releases_lock` executes the generated default and verifies no history deletion and lock release. |
+| Reserved generated class names | `MigrationCreatorTest::test_reserved_class_names_fail_without_creating_files` covers 23 keywords/types/import conflicts; existing normalization tests retain compatible names. |
+
+Verified locally on Windows, MySQL 8.4.9:
+
+- PHP 8.1.31: 206 unit tests / 709 assertions; 55 integration tests / 432 assertions.
+- PHP 7.4.33: 205 unit tests / 708 assertions, followed by the added concurrent-write
+  regression (1 test / 1 assertion); 55 integration tests / 432 assertions.
+- Installed consumer cycle passed on both PHP versions, including Composer's
+  Windows proxy, install/update, run, repeated run and rollback.
+
+The updated Linux/PHP 8.4 CI configuration has not been executed locally.
+
+For TLS integration tests, run
+`php tests/Support/create-tls-fixtures.php .test-runtime/tls` (requires OpenSSL)
+and configure only your dedicated test MySQL server with `server.pem` as both
+its CA and server certificate, and `server-key.pem` as its key. Set
+`MIGRATION_MANAGER_TEST_TLS_DIR` to the absolute fixture directory, alongside
+the ordinary integration settings. Certificates expire after two days; regenerate
+them before reuse. Never use these test certificates outside the test server.
+Without this variable the two TLS integration tests are explicitly skipped.
+CI generates fresh certificates, reloads the service's TLS configuration and
+sets the variable for every matrix job.
+
+### Before the audit fixes
+
 On 2026-09-10, Windows with MySQL 8.4.9 passed on PHP 7.4.33 and PHP 8.1.31:
 
 | Check | Result on each PHP version |

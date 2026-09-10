@@ -30,6 +30,7 @@ final class MigrationRepositoryTest extends MigrationManagerTestCase
         $this->assertSame($firstConnection, $accessor->invoke($first));
         $this->assertSame($secondConnection, $accessor->invoke($second));
         $first->up();
+        $this->expectException(\Kgkg\MigrationManager\IrreversibleMigrationException::class);
         $second->down();
     }
 

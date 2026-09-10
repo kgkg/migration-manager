@@ -39,13 +39,23 @@ jobs:
       - uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
-          extensions: mysqli, mysqlnd
+          extensions: mysqli, mysqlnd, tokenizer, openssl
           coverage: none
           tools: composer:v2
       - run: composer install --no-interaction --prefer-dist --no-progress
       - run: composer validate --strict
       - name: Allow test triggers with binary logging
         run: docker exec ${{ job.services.mysql.id }} mysql -uroot -proot-test-only -e "SET GLOBAL log_bin_trust_function_creators=1"
+      - name: Configure ephemeral TLS certificates
+        run: |
+          php tests/Support/create-tls-fixtures.php .test-runtime/tls
+          docker cp .test-runtime/tls/server.pem ${{ job.services.mysql.id }}:/var/lib/mysql/ca.pem
+          docker cp .test-runtime/tls/server.pem ${{ job.services.mysql.id }}:/var/lib/mysql/server-cert.pem
+          docker cp .test-runtime/tls/server-key.pem ${{ job.services.mysql.id }}:/var/lib/mysql/server-key.pem
+          docker exec ${{ job.services.mysql.id }} chown mysql:mysql /var/lib/mysql/ca.pem /var/lib/mysql/server-cert.pem /var/lib/mysql/server-key.pem
+          docker exec ${{ job.services.mysql.id }} chmod 600 /var/lib/mysql/server-key.pem
+          docker exec ${{ job.services.mysql.id }} mysql -uroot -proot-test-only -e "ALTER INSTANCE RELOAD TLS"
+          echo "MIGRATION_MANAGER_TEST_TLS_DIR=$GITHUB_WORKSPACE/.test-runtime/tls" >> "$GITHUB_ENV"
       - run: composer test
       - run: composer test:integration
       - run: php tests/consumer.php

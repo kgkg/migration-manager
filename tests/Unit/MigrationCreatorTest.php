@@ -10,6 +10,63 @@ final class MigrationCreatorTest extends MigrationManagerTestCase
     private const CURRENT_TIMESTAMP = 1784023200;
 
     /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function test_file_appearing_between_discovery_and_write_is_not_overwritten(): void
+    {
+        // Simulate another process creating the target immediately before it is opened.
+        eval('namespace Kgkg\\MigrationManager; function fopen($path, $mode) {'
+            . '\\file_put_contents($path, "concurrent user changes"); return \\fopen($path, $mode); }');
+        try {
+            $this->createCreator()->create('concurrent');
+            $this->fail('Exclusive creation must fail.');
+        } catch (MigrationException $error) {
+            $path = $this->temporaryDirectory . '/' . date('YmdHis', self::CURRENT_TIMESTAMP) . '_concurrent.php';
+            $this->assertSame('concurrent user changes', file_get_contents($path));
+        }
+    }
+
+    public function test_literal_directory_discovery_and_duplicate_protection(): void
+    {
+        $directory = $this->temporaryDirectory . '/app[1]';
+        $creator = $this->createCreator($directory);
+        $first = $creator->create('first');
+        file_put_contents($first, '<?php // user changes');
+        $creator->create('second');
+        $files = (new \Kgkg\MigrationManager\MigrationRepository($directory))->findAll();
+        $this->assertCount(2, $files);
+        $this->assertSame(date('YmdHis', self::CURRENT_TIMESTAMP + 1), $files[1]->getVersion());
+        try {
+            $creator->create('first');
+            $this->fail('Duplicate must fail.');
+        } catch (MigrationException $error) {
+            $this->assertSame('<?php // user changes', file_get_contents($first));
+        }
+    }
+
+    /** @dataProvider reservedNames */
+    public function test_reserved_class_names_fail_without_creating_files(string $name): void
+    {
+        try {
+            $this->createCreator()->create($name);
+            $this->fail('Reserved name must fail.');
+        } catch (MigrationException $error) {
+            $this->assertStringContainsString('reserved PHP class name', $error->getMessage());
+            $this->assertSame(['.', '..'], scandir($this->temporaryDirectory));
+        }
+    }
+
+    public function reservedNames(): array
+    {
+        return array_map(static function ($name) { return [$name]; }, [
+            'class', 'trait', 'interface', 'function', 'array', 'callable', 'self', 'parent',
+            'string', 'int', 'bool', 'null', 'true', 'false', 'void', 'iterable', 'object',
+            'mixed', 'never', 'match', 'enum', 'readonly', 'abstract migration',
+        ]);
+    }
+
+    /**
      * @dataProvider provideMigrationNames
      */
     public function test_should_normalize_name_and_create_migration(

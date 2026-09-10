@@ -15,7 +15,7 @@ final class MysqliConnection implements ConnectionInterface
 
     /**
      * Create an owned connection. Required: database, username and password.
-     * Optional: host (127.0.0.1), port (3306), charset (utf8mb4).
+     * Optional: host (127.0.0.1), port (3306), charset (utf8mb4), ssl_ca (verified TLS).
      *
      * @param array<string, mixed> $parameters
      */
@@ -32,8 +32,14 @@ final class MysqliConnection implements ConnectionInterface
         if (!is_int($parameters['port']) || $parameters['port'] < 1 || $parameters['port'] > 65535) {
             throw new ConnectionException('Connection port must be an integer between 1 and 65535.');
         }
-        if (array_diff(array_keys($parameters), ['host', 'port', 'database', 'username', 'password', 'charset'])) {
+        if (array_diff(array_keys($parameters), ['host', 'port', 'database', 'username', 'password', 'charset', 'ssl_ca'])) {
             throw new ConnectionException('Unknown connection parameter.');
+        }
+        $tls = array_key_exists('ssl_ca', $parameters);
+        if ($tls && (!is_string($parameters['ssl_ca']) || $parameters['ssl_ca'] === ''
+            || strpos($parameters['ssl_ca'], "\0") !== false
+            || !is_file($parameters['ssl_ca']) || !is_readable($parameters['ssl_ca']))) {
+            throw new ConnectionException('Connection ssl_ca must be a readable CA certificate file.');
         }
 
         $native = null;
@@ -42,8 +48,12 @@ final class MysqliConnection implements ConnectionInterface
             if ($native === false) {
                 throw new ConnectionException('Unable to initialize MySQLi.');
             }
+            if ($tls && !@$native->ssl_set(null, null, $parameters['ssl_ca'], null, null)) {
+                throw new ConnectionException('Unable to configure verified TLS.');
+            }
             if (@$native->real_connect($parameters['host'], $parameters['username'], $parameters['password'],
-                $parameters['database'], $parameters['port']) === false) {
+                $parameters['database'], $parameters['port'], null,
+                $tls ? MYSQLI_CLIENT_SSL | MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT : 0) === false) {
                 throw new ConnectionException('Unable to connect to MySQL: ' . $native->connect_error, $native->connect_errno);
             }
             if (@$native->set_charset($parameters['charset']) === false) {
@@ -51,6 +61,12 @@ final class MysqliConnection implements ConnectionInterface
             }
             $adapter = new self($native);
             $adapter->owned = true;
+            if ($tls) {
+                $status = $adapter->fetchAll("SHOW SESSION STATUS LIKE 'Ssl_cipher'");
+                if (empty($status[0]['Value'])) {
+                    throw new ConnectionException('TLS was required but the server did not negotiate encryption.');
+                }
+            }
             return $adapter;
         } catch (\Throwable $error) {
             if ($native instanceof \mysqli) {

@@ -85,7 +85,7 @@ $migration = file_get_contents($files[0]);
 $migration = str_replace("// Apply changes with \$this->execute('CREATE TABLE ...');",
     '$this->execute(' . var_export("CREATE TABLE `$effects` (id INT)", true) . ');', $migration);
 // Use the generated class and imports while supplying reversible SQL.
-$migration = str_replace("// Revert changes with \$this->execute('DROP TABLE ...');",
+$migration = str_replace('throw new \\Kgkg\\MigrationManager\\IrreversibleMigrationException();',
     '$this->execute(' . var_export("DROP TABLE `$effects`", true) . ');', $migration);
 file_put_contents($files[0], $migration);
 $db = MysqliConnection::connect([

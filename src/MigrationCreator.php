@@ -23,14 +23,14 @@ final class MigrationCreator
     {
         $migrationName = $this->normalizeName($name);
         $className = $this->classNameFromMigrationName($migrationName);
+        $this->validateClassName($className);
 
         $this->ensureDirectoryExists();
-        $duplicates = glob($this->directory . DIRECTORY_SEPARATOR . '*_' . $migrationName . '.php');
-        if ($duplicates === false) {
-            throw new MigrationException("Unable to read the migration directory: {$this->directory}");
-        }
-        if ($duplicates !== []) {
-            throw new MigrationException("A migration named {$migrationName} already exists.");
+        foreach ($this->entries() as $entry) {
+            $suffix = '_' . $migrationName . '.php';
+            if (substr($entry, -strlen($suffix)) === $suffix) {
+                throw new MigrationException("A migration named {$migrationName} already exists.");
+            }
         }
 
         $timestamp = (int)call_user_func($this->currentTimestampProvider);
@@ -43,8 +43,16 @@ final class MigrationCreator
         }
 
         $contents = $this->buildContents($className);
-        if (file_put_contents($path, $contents, LOCK_EX) === false) {
+        $handle = @fopen($path, 'x');
+        if ($handle === false) {
             throw new MigrationException("Unable to create the migration file: {$path}");
+        }
+        try {
+            if (fwrite($handle, $contents) !== strlen($contents)) {
+                throw new MigrationException("Unable to write the migration file: {$path}");
+            }
+        } finally {
+            fclose($handle);
         }
 
         return $path;
@@ -52,12 +60,33 @@ final class MigrationCreator
 
     private function versionExists(string $version): bool
     {
-        $matches = glob($this->directory . DIRECTORY_SEPARATOR . $version . '_*.php');
-        if ($matches === false) {
+        foreach ($this->entries() as $entry) {
+            if (strpos($entry, $version . '_') === 0 && substr($entry, -4) === '.php') {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private function entries(): array
+    {
+        $entries = @scandir($this->directory);
+        if ($entries === false) {
             throw new MigrationException("Unable to read the migration directory: {$this->directory}");
         }
+        return $entries;
+    }
 
-        return $matches !== [];
+    private function validateClassName(string $name): void
+    {
+        $tokens = token_get_all('<?php ' . $name);
+        if ($tokens[1][0] !== T_STRING || in_array(strtolower($name), [
+            'self', 'parent', 'static', 'int', 'float', 'bool', 'string', 'true', 'false',
+            'null', 'void', 'iterable', 'object', 'mixed', 'never', 'resource', 'numeric',
+            'match', 'enum', 'readonly', 'abstractmigration',
+        ], true)) {
+            throw new MigrationException('The migration name produces a reserved PHP class name: ' . $name);
+        }
     }
 
     private function normalizeName(string $name): string
@@ -108,7 +137,8 @@ final class {$className} extends AbstractMigration
 
     public function down(): void
     {
-        // Revert changes with \$this->execute('DROP TABLE ...');
+        // Replace this exception with SQL that reverses up().
+        throw new \\Kgkg\\MigrationManager\\IrreversibleMigrationException();
     }
 }
 PHP;

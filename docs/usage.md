@@ -42,6 +42,29 @@ See the [generated configuration example](../examples/migration.config.php).
 | `host` | `127.0.0.1` |
 | `port` | Integer `3306`; accepted range 1–65535. |
 | `charset` | `utf8mb4` |
+| `ssl_ca` | Optional readable CA certificate file. When supplied, TLS and server certificate verification are mandatory. |
+
+### TLS for remote databases
+
+Add this connection parameter for a remote MySQL server:
+
+```php
+'ssl_ca' => __DIR__ . '/certificates/mysql-ca.pem',
+```
+
+Use the CA supplied by your database operator and a `host` matching the server
+certificate. Relative CA paths use the process working directory, so prefer
+`__DIR__` as above. Invalid CA paths, untrusted certificates and unencrypted
+connections fail with `ConnectionException`; there is no option to disable
+verification. Omitting `ssl_ca` preserves the existing connection behavior and
+does not require TLS. For client certificates or other custom native options,
+configure a `mysqli` instance and pass it to the adapter constructor.
+
+Generated migrations use literal directory paths, including brackets such as
+`app[1]`. Existing files are never overwritten. Reserved PHP class names (for
+example `class`, `string`, `match`) are rejected before creating a file;
+existing valid migration class names keep their format. The `tokenizer`
+extension is required for keyword validation.
 
 ## CLI details
 
@@ -150,7 +173,9 @@ public function down(): void
 }
 ```
 
-This stops rollback and preserves its history entry. An empty `down()` does not
+This is the generated default: replace the exception when implementing a
+reversible migration. It stops rollback and preserves its history entry.
+An explicitly empty `down()` does not
 mark a migration irreversible.
 
 ## Custom connection adapter

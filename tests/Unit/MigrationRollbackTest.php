@@ -10,6 +10,23 @@ use Kgkg\MigrationManager\MigrationManager;
 
 final class MigrationRollbackTest extends MigrationManagerTestCase
 {
+    public function test_generated_down_preserves_history_and_releases_lock(): void
+    {
+        $path = (new \Kgkg\MigrationManager\MigrationCreator($this->temporaryDirectory))
+            ->create('generated rollback ' . bin2hex(random_bytes(6)));
+        $version = substr(basename($path), 0, 14);
+        $db = $this->createMock(ConnectionInterface::class);
+        $db->method('getDatabaseName')->willReturn('unit_database');
+        $db->method('fetchAll')->willReturn([['version' => $version]]);
+        $db->expects($this->exactly(2))->method('fetchValue')->withConsecutive(
+            ['SELECT GET_LOCK(?, ?)', $this->isType('array')],
+            ['SELECT RELEASE_LOCK(?)', $this->isType('array')]
+        )->willReturn(1);
+        $db->expects($this->never())->method('executePrepared');
+        $this->expectException(IrreversibleMigrationException::class);
+        (new MigrationManager($db, $this->temporaryDirectory))->rollback();
+    }
+
     /** @dataProvider invalidSteps */
     public function test_invalid_steps_do_not_access_database(int $steps): void
     {

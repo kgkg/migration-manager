@@ -23,14 +23,17 @@ final class MigrationRepository
             throw new MigrationException("Migration directory does not exist: {$this->directory}");
         }
 
-        $paths = glob($this->directory . DIRECTORY_SEPARATOR . '*.php');
-        if ($paths === false) {
+        $entries = @scandir($this->directory);
+        if ($entries === false) {
             throw new MigrationException("Unable to read the migration directory: {$this->directory}");
         }
 
         $migrations = [];
-        foreach ($paths as $path) {
-            $fileName = basename($path);
+        foreach ($entries as $fileName) {
+            if (substr($fileName, -4) !== '.php') {
+                continue;
+            }
+            $path = $this->directory . DIRECTORY_SEPARATOR . $fileName;
             if (preg_match('/^(\d{14})_([a-z][a-z0-9_]*)\.php$/', $fileName, $matches) !== 1) {
                 throw new MigrationException(
                     "Invalid migration filename '{$fileName}'. "

@@ -86,7 +86,7 @@ PHP
         $this->assertCount(1, $files);
         $contents = file_get_contents($files[0]);
         $contents = str_replace("// Apply changes with \$this->execute('CREATE TABLE ...');", $up, $contents);
-        $contents = str_replace("// Revert changes with \$this->execute('DROP TABLE ...');", $down, $contents);
+        $contents = str_replace('throw new \\Kgkg\\MigrationManager\\IrreversibleMigrationException();', $down, $contents);
         file_put_contents($files[0], $contents);
         return $files[0];
     }

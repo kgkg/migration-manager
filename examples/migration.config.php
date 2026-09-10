@@ -16,6 +16,8 @@ return [
             'username' => getenv('DB_USERNAME'),
             'password' => getenv('DB_PASSWORD'),
             'charset' => 'utf8mb4',
+            // For remote databases: require TLS and verify the server certificate.
+            // 'ssl_ca' => __DIR__ . '/certificates/mysql-ca.pem',
         ]);
     },
 

@@ -4,7 +4,7 @@ Run versioned MySQL migrations from your terminal or PHP application.
 
 ## Quick start
 
-You need PHP 7.4 or 8.x with `mysqli` and `mysqlnd`, Composer 2.2+, and an
+You need PHP 7.4 or 8.x with `mysqli`, `mysqlnd` and `tokenizer`, Composer 2.2+, and an
 existing MySQL database. Your database user must be able to execute your migration
 SQL and create, read, insert into and delete from the migration history table.
 
@@ -53,6 +53,9 @@ return [
 Keep real credentials out of version control. The generated configuration also
 supports process environment variables `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
 `DB_USERNAME` and `DB_PASSWORD`. `.env` files are not loaded automatically.
+
+For remote databases, configure `ssl_ca` with a trusted CA certificate file to
+require encrypted transport and server identity verification; see [TLS configuration](docs/usage.md#tls-for-remote-databases).
 
 ### 3. Create your first migration
 
@@ -124,7 +127,9 @@ operation; earlier successful changes remain completed.
 ## Before using rollback
 
 Rollback follows version numbers, which may differ from execution order.
-It needs the original migration file and a working `down()` method. An empty
+It needs the original migration file and a working `down()` method. Generated
+migrations throw `IrreversibleMigrationException` until you implement `down()`.
+Existing migration files are not changed. An explicitly empty
 `down()` succeeds and removes history without undoing SQL. For a change that
 cannot be reversed, throw `IrreversibleMigrationException` from `down()`.
 
