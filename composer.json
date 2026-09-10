@@ -18,8 +18,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Kgkg\\MigrationManager\\Tests\\": "tests/",
-            "Test\\Unit\\Kgkg\\MigrationManager\\": "tests/"
+            "Kgkg\\MigrationManager\\Tests\\": "tests/"
         }
     },
     "bin": [
