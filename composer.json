@@ -1,0 +1,32 @@
+{
+    "name": "kgkg/migration-manager",
+    "description": "A lightweight PHP database migration manager with MySQLi support.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^7.4 || ^8.0",
+        "ext-mysqli": "*"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^9.6"
+    },
+    "autoload": {
+        "psr-4": {
+            "Kgkg\\MigrationManager\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Kgkg\\MigrationManager\\Tests\\": "tests/",
+            "Test\\Unit\\Kgkg\\MigrationManager\\": "tests/"
+        }
+    },
+    "bin": [
+        "bin/migration-manager"
+    ],
+    "scripts": {
+        "test": "@test:unit",
+        "test:unit": "phpunit --configuration phpunit.xml.dist",
+        "test:integration": "phpunit --configuration phpunit.integration.xml.dist"
+    }
+}

@@ -1,0 +1,32 @@
+#!/usr/bin/env php
+<?php
+
+if (PHP_SAPI !== 'cli') {
+    http_response_code(404);
+    exit;
+}
+
+$autoloadPath = $_composer_autoload_path ?? dirname(__DIR__) . '/vendor/autoload.php';
+if (!is_file($autoloadPath)) {
+    // Fallback for dependencies installed using Composer older than 2.2.
+    $autoloadPath = dirname(__DIR__, 3) . '/autoload.php';
+}
+
+if (!is_file($autoloadPath)) {
+    fwrite(STDERR, "Autoloader not found. Run composer install.\n");
+    exit(1);
+}
+
+require $autoloadPath;
+
+try {
+    $projectRoot = getcwd();
+    if ($projectRoot === false) {
+        throw new RuntimeException('Unable to determine the project directory.');
+    }
+
+    exit((new Kgkg\MigrationManager\ConsoleApplication($projectRoot))->run($argv));
+} catch (Throwable $exception) {
+    fwrite(STDERR, 'Migration error: ' . $exception->getMessage() . "\n");
+    exit(1);
+}
