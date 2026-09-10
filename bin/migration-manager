@@ -8,11 +8,6 @@ if (PHP_SAPI !== 'cli') {
 
 $autoloadPath = $_composer_autoload_path ?? dirname(__DIR__) . '/vendor/autoload.php';
 if (!is_file($autoloadPath)) {
-    // Fallback for dependencies installed using Composer older than 2.2.
-    $autoloadPath = dirname(__DIR__, 3) . '/autoload.php';
-}
-
-if (!is_file($autoloadPath)) {
     fwrite(STDERR, "Autoloader not found. Run composer install.\n");
     exit(1);
 }
