@@ -2,5 +2,3 @@
 /.test-runtime/
 /composer.lock
 /.phpunit.result.cache
-
-.idea
