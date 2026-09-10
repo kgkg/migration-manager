@@ -1,0 +1,51 @@
+name: Tests
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  mysql:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.1', '8.4']
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root-test-only
+          MYSQL_DATABASE: migration_manager_test_ci
+          MYSQL_USER: migration_test
+          MYSQL_PASSWORD: test-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -proot-test-only"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      MIGRATION_MANAGER_TEST_ALLOW_DESTRUCTIVE: '1'
+      MIGRATION_MANAGER_TEST_HOST: 127.0.0.1
+      MIGRATION_MANAGER_TEST_PORT: '3306'
+      MIGRATION_MANAGER_TEST_DATABASE: migration_manager_test_ci
+      MIGRATION_MANAGER_TEST_USERNAME: migration_test
+      MIGRATION_MANAGER_TEST_PASSWORD: test-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          extensions: mysqli, mysqlnd
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --prefer-dist --no-progress
+      - run: composer validate --strict
+      - name: Allow test triggers with binary logging
+        run: docker exec ${{ job.services.mysql.id }} mysql -uroot -proot-test-only -e "SET GLOBAL log_bin_trust_function_creators=1"
+      - run: composer test
+      - run: composer test:integration
+      - run: php tests/consumer.php
