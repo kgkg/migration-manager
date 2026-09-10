@@ -49,14 +49,14 @@ final class MigrationManagerTest extends MigrationManagerTestCase
         return new MigrationManager($db ?? $this->db, $this->temporaryDirectory, $this->table);
     }
 
-    private function migration(string $version, string $sql): string
+    private function migration(string $version, string $sql, string $down = ''): string
     {
         $name = 'integration_' . bin2hex(random_bytes(8));
         $class = str_replace('_', '', ucwords($name, '_'));
         return $this->writeMigrationFile($version . '_' . $name . '.php',
             '<?php final class ' . $class . ' extends \\Kgkg\\MigrationManager\\AbstractMigration {'
             . 'public function up(): void {$this->execute(' . var_export($sql, true) . ');}'
-            . 'public function down(): void {}}');
+            . 'public function down(): void {' . $down . '}}');
     }
 
     private function lockName(): string
@@ -207,6 +207,105 @@ final class MigrationManagerTest extends MigrationManagerTestCase
             }
         });
         $this->assertSame([], $second->runPending());
+        $this->assertLockReleased();
+    }
+
+    public function test_rollback_uses_versions_and_reuses_files_across_managers(): void
+    {
+        $this->db->execute("CREATE TABLE `{$this->effects}` (id INT PRIMARY KEY)");
+        $this->migration('20260714120002', "INSERT INTO `{$this->effects}` VALUES (2)",
+            '$this->execute(' . var_export("DELETE FROM `{$this->effects}` WHERE id = 2", true) . ');');
+        $first = $this->manager();
+        $first->runPending();
+        // An older version is applied later, so execution order differs from version order.
+        $this->migration('20260714120001', "INSERT INTO `{$this->effects}` VALUES (1)",
+            '$this->execute(' . var_export("DELETE FROM `{$this->effects}` WHERE id = 1", true) . ');');
+        $first->runPending();
+        $second = $this->manager($this->other);
+        $versions = [];
+        $files = $second->rollback(5, function ($file, $ms) use (&$versions): void {
+            $versions[] = $file->getVersion();
+            $this->assertSame(0, (int)$this->db->fetchValue(
+                "SELECT COUNT(*) FROM `{$this->table}` WHERE version = ?", [$file->getVersion()]));
+            $this->assertSame((int)$this->other->fetchValue('SELECT CONNECTION_ID()'),
+                (int)$this->db->fetchValue('SELECT IS_USED_LOCK(?)', [$this->lockName()]));
+            $this->assertIsInt($ms);
+            $this->assertGreaterThanOrEqual(0, $ms);
+            try {
+                $this->manager()->rollback();
+                $this->fail('Concurrent rollback must be blocked.');
+            } catch (MigrationException $error) {
+                $this->assertSame('Another process is currently running migrations.', $error->getMessage());
+            }
+        });
+        $this->assertSame(['20260714120002', '20260714120001'], $versions);
+        $this->assertSame($versions, array_map(static function ($file) { return $file->getVersion(); }, $files));
+        $this->assertSame(0, (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+        $this->assertSame([], $second->rollback());
+        $this->assertCount(2, $first->getPending());
+        $this->assertLockReleased();
+    }
+
+    /** @dataProvider rollbackFailures */
+    public function test_rollback_stops_at_failure_and_preserves_failed_history(string $failure): void
+    {
+        $this->db->execute("CREATE TABLE `{$this->effects}` (id INT PRIMARY KEY)");
+        $down = '$this->execute(' . var_export("INSERT INTO `{$this->effects}` VALUES (1)", true) . ');';
+        if ($failure === 'irreversible') {
+            $down = 'throw new \\Kgkg\\MigrationManager\\IrreversibleMigrationException("Data cannot be restored.");';
+        } elseif ($failure === 'sql') {
+            $down .= '$this->execute("INVALID SQL");';
+        }
+        $this->migration('20260714120000', 'SELECT 1');
+        $path = $this->migration('20260714120001', 'SELECT 1', $down);
+        $this->migration('20260714120002', 'SELECT 1');
+        $manager = $this->manager();
+        $manager->runPending();
+        if ($failure === 'missing') {
+            unlink($path);
+        } elseif ($failure === 'delete') {
+            $this->db->execute("CREATE TRIGGER `{$this->table}_guard` BEFORE DELETE ON `{$this->table}` "
+                . "FOR EACH ROW BEGIN IF OLD.version = '20260714120001' THEN "
+                . "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'History delete blocked'; END IF; END");
+        }
+        $callbacks = [];
+        try {
+            $manager->rollback(3, static function ($file) use (&$callbacks): void {
+                $callbacks[] = $file->getVersion();
+            });
+            $this->fail('Rollback must stop at the failed migration.');
+        } catch (MigrationException $error) {
+            $this->assertNotSame('', $error->getMessage());
+            if ($failure === 'irreversible') {
+                $this->assertInstanceOf(\Kgkg\MigrationManager\IrreversibleMigrationException::class, $error);
+                $this->assertSame('Data cannot be restored.', $error->getMessage());
+            }
+        }
+        $this->assertSame(['20260714120002'], $callbacks);
+        $this->assertSame([
+            ['version' => '20260714120000'], ['version' => '20260714120001'],
+        ], $this->db->fetchAll("SELECT version FROM `{$this->table}` ORDER BY version"));
+        $this->assertSame(in_array($failure, ['sql', 'delete'], true) ? 1 : 0,
+            (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+        $this->assertLockReleased();
+    }
+
+    public function rollbackFailures(): array
+    {
+        return [['irreversible'], ['missing'], ['sql'], ['delete']];
+    }
+
+    public function test_default_rollback_accepts_empty_down_and_removes_only_highest_version(): void
+    {
+        $this->migration('20260714120000', 'SELECT 1');
+        $this->migration('20260714120001', 'SELECT 1');
+        $manager = $this->manager();
+        $manager->runPending();
+        $files = $manager->rollback();
+        $this->assertCount(1, $files);
+        $this->assertSame('20260714120001', $files[0]->getVersion());
+        $this->assertSame([['version' => '20260714120000']],
+            $this->db->fetchAll("SELECT version FROM `{$this->table}`"));
         $this->assertLockReleased();
     }
 }

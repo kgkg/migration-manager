@@ -74,9 +74,10 @@ final class MigrationManager
     }
 
     /**
-     * Rolls back migrations in descending version order. Available through the API
-     * using the existing history schema.
+     * Rolls back migrations in descending version order, not execution order.
+     * Stops on the first failure; previously completed steps remain rolled back.
      *
+     * @param callable|null $afterMigration function (MigrationFile $file, int $executionTimeMs): void
      * @return MigrationFile[]
      */
     public function rollback(int $steps = 1, ?callable $afterMigration = null): array
@@ -92,14 +93,12 @@ final class MigrationManager
                 $filesByVersion[$file->getVersion()] = $file;
             }
 
-            $appliedRows = array_map(static function ($version): array {
-                return ['version' => $version];
-            }, array_reverse(array_keys($this->history->getAppliedVersions())));
-            $appliedRows = array_slice($appliedRows, 0, $steps);
+            $versions = array_reverse(array_keys($this->history->getAppliedVersions()));
+            $versions = array_slice($versions, 0, $steps);
             $rolledBack = [];
 
-            foreach ($appliedRows as $row) {
-                $version = (string)$row['version'];
+            foreach ($versions as $version) {
+                $version = (string)$version;
                 if (isset($filesByVersion[$version]) === false) {
                     throw new MigrationException("Missing file for applied migration {$version}.");
                 }
