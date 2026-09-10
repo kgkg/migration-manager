@@ -4,14 +4,6 @@ namespace Kgkg\MigrationManager;
 
 final class ConsoleApplication
 {
-    private string $migrationsDirectory;
-
-    public function __construct(string $projectRoot)
-    {
-        $this->migrationsDirectory = rtrim($projectRoot, '/\\') . DIRECTORY_SEPARATOR . 'db'
-            . DIRECTORY_SEPARATOR . 'migrations';
-    }
-
     /**
      * @param string[] $arguments
      */
@@ -29,6 +21,7 @@ final class ConsoleApplication
     {
         $positionals = [];
         $config = null;
+        $steps = null;
         $help = false;
         for ($i = 1, $count = count($arguments); $i < $count; $i++) {
             $argument = $arguments[$i];
@@ -42,6 +35,16 @@ final class ConsoleApplication
                 if (trim($config) === '' || $config[0] === '-') {
                     throw new MigrationException('The --config option requires a file path.');
                 }
+            } elseif ($argument === '--steps' || strpos($argument, '--steps=') === 0) {
+                if ($steps !== null) {
+                    throw new MigrationException('The --steps option may only be specified once.');
+                }
+                $value = $argument === '--steps' ? ($arguments[++$i] ?? '') : substr($argument, 8);
+                if (preg_match('/^[1-9][0-9]*$/D', $value) !== 1
+                    || filter_var($value, FILTER_VALIDATE_INT) === false) {
+                    throw new MigrationException('The --steps option requires a positive integer within the PHP integer range.');
+                }
+                $steps = (int)$value;
             } elseif (isset($argument[0]) && $argument[0] === '-') {
                 throw new MigrationException('Unknown option: ' . $argument);
             } else {
@@ -49,19 +52,23 @@ final class ConsoleApplication
             }
         }
         $command = $positionals[0] ?? '';
-        if ($command !== '' && !in_array($command, ['init', 'create', 'show', 'run'], true)) {
+        if ($command !== '' && !in_array($command, ['init', 'create', 'show', 'run', 'rollback'], true)) {
             throw new MigrationException('Unknown command: ' . $command);
         }
         if (count($positionals) > ($command === 'create' ? 2 : 1)) {
             throw new MigrationException('Unexpected positional argument. Quote names containing spaces.');
         }
+        if ($steps !== null && $command !== 'rollback') {
+            throw new MigrationException('The --steps option is only valid for rollback.');
+        }
         if ($help) {
             fwrite(STDOUT, "Usage: migration-manager <command> [options]\n"
-                . "Commands: init, create <name>, show, run\n"
+                . "Commands: init, create <name>, show, run, rollback [--steps=1]\n"
                 . "Options: --help, --config <file>, --config=<file>\n"
                 . "Default configuration: migration.config.php (relative to CWD).\n"
                 . "init creates configuration and db/migrations without overwriting files.\n"
                 . "create accepts one name; quote names containing spaces.\n"
+                . "rollback reverts migrations in descending version order; steps defaults to 1.\n"
                 . "Without a name, create prompts only when STDIN is a terminal.\n");
             return 0;
         }
@@ -73,17 +80,12 @@ final class ConsoleApplication
             return $this->createMigration($positionals[1] ?? null, $config ?? 'migration.config.php');
         }
 
-        // Database command configuration is migrated in the next implementation step.
-        if ($config !== null) {
-            throw new MigrationException('File configuration for database commands is not available yet.');
-        }
-
-        if ($command === 'run') {
-            return $this->runMigrations();
-        }
-
-        if ($command === 'show') {
-            return $this->showPendingMigrations();
+        if (in_array($command, ['show', 'run', 'rollback'], true)) {
+            $configuration = Configuration::load($config ?? 'migration.config.php');
+            $manager = new MigrationManager($configuration->getConnection(), $configuration->getMigrationsPath(),
+                $configuration->getTableName(), $configuration->getLockTimeout());
+            return $command === 'show' ? $this->showPendingMigrations($manager)
+                : $this->executeMigrations($manager, $command === 'rollback', $steps ?? 1);
         }
 
         throw new MigrationException('A command is required. Use --help for usage.');
@@ -149,30 +151,26 @@ final class ConsoleApplication
         return 0;
     }
 
-    private function runMigrations(): int
+    private function executeMigrations(MigrationManager $manager, bool $rollback, int $steps): int
     {
-        $manager = new MigrationManager(\Database::getInstance(), $this->migrationsDirectory);
-        $executed = $manager->runPending(
-            static function (MigrationFile $file, int $executionTimeMs): void {
-                fwrite(
-                    STDOUT,
-                    "Executed {$file->getVersion()}_{$file->getName()} ({$executionTimeMs} ms)\n"
-                );
-            }
-        );
+        $startedAt = microtime(true);
+        $verb = $rollback ? 'Rolled back' : 'Executed';
+        $callback = static function (MigrationFile $file, int $executionTimeMs) use ($verb): void {
+            fwrite(STDOUT, "{$verb} {$file->getVersion()}_{$file->getName()} ({$executionTimeMs} ms)\n");
+        };
+        $executed = $rollback ? $manager->rollback($steps, $callback) : $manager->runPending($callback);
 
         if ($executed === []) {
-            fwrite(STDOUT, "No pending migrations.\n");
-        } else {
-            fwrite(STDOUT, 'Executed migrations: ' . count($executed) . "\n");
+            fwrite(STDOUT, $rollback ? "No migrations to roll back.\n" : "No pending migrations.\n");
         }
+        $elapsed = max(0, (int)round((microtime(true) - $startedAt) * 1000));
+        fwrite(STDOUT, $verb . ' migrations: ' . count($executed) . " ({$elapsed} ms total)\n");
 
         return 0;
     }
 
-    private function showPendingMigrations(): int
+    private function showPendingMigrations(MigrationManager $manager): int
     {
-        $manager = new MigrationManager(\Database::getInstance(), $this->migrationsDirectory);
         $pending = $manager->getPending();
 
         if ($pending === []) {

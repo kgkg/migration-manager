@@ -15,12 +15,7 @@ if (!is_file($autoloadPath)) {
 require $autoloadPath;
 
 try {
-    $projectRoot = getcwd();
-    if ($projectRoot === false) {
-        throw new RuntimeException('Unable to determine the project directory.');
-    }
-
-    exit((new Kgkg\MigrationManager\ConsoleApplication($projectRoot))->run($argv));
+    exit((new Kgkg\MigrationManager\ConsoleApplication())->run($argv));
 } catch (Throwable $exception) {
     fwrite(STDERR, 'Migration error: ' . $exception->getMessage() . "\n");
     exit(1);

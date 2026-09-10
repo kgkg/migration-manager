@@ -4,9 +4,12 @@ namespace Kgkg\MigrationManager\Tests\Unit;
 
 final class ConsoleApplicationTest extends MigrationManagerTestCase
 {
+    use \Kgkg\MigrationManager\Tests\Support\ConsoleProcess;
+
     public function testHelpDoesNotLoadConfiguration(): void
     {
-        foreach ([['--help'], ['create', '--config=missing.php', '--help']] as $arguments) {
+        foreach ([['--help'], ['create', '--config=missing.php', '--help'],
+            ['rollback', '--steps=2', '--config=missing.php', '--help']] as $arguments) {
             [$code, $output, $error] = $this->cli($arguments);
             $this->assertSame(0, $code, $error);
             $this->assertStringContainsString('Usage: migration-manager', $output);
@@ -102,6 +105,20 @@ PHP
             [['init', '--config=missing/config.php'], 'parent directory must exist'],
             [['init', '--config=php://memory'], 'filesystem path'],
             [['init', '--config=C:config.php'], 'filesystem path'],
+            [['rollback', '--steps=0'], 'positive integer'],
+            [['rollback', '--steps=-1'], 'positive integer'],
+            [['rollback', '--steps=1.5'], 'positive integer'],
+            [['rollback', '--steps=1e2'], 'positive integer'],
+            [['rollback', '--steps=abc'], 'positive integer'],
+            [['rollback', '--steps=999999999999999999999999'], 'positive integer'],
+            [['rollback', '--steps='], 'positive integer'],
+            [['rollback', '--steps'], 'positive integer'],
+            [['rollback', '--steps=1', '--steps=2'], 'only be specified once'],
+            [['run', '--steps=1'], 'only valid for rollback'],
+            [['rollback', 'extra'], 'Unexpected positional'],
+            [['show'], 'Missing or unreadable configuration'],
+            [['run'], 'Missing or unreadable configuration'],
+            [['rollback'], 'Missing or unreadable configuration'],
         ];
     }
 
@@ -148,33 +165,4 @@ PHP
         $this->assertStringContainsString('Autoloader not found', $error);
     }
 
-    private function cli(array $arguments, ?string $entrypoint = null): array
-    {
-        $stdout = $this->temporaryDirectory . '/stdout.log';
-        $stderr = $this->temporaryDirectory . '/stderr.log';
-        $process = proc_open(array_merge([PHP_BINARY, $entrypoint ?? dirname(__DIR__, 2) . '/bin/migration-manager'], $arguments),
-            [0 => ['pipe', 'r'], 1 => ['file', $stdout, 'w'], 2 => ['file', $stderr, 'w']],
-            $pipes, $this->temporaryDirectory);
-        $this->assertIsResource($process);
-        // Keep the input pipe open: a mistaken fgets() must time out instead of seeing EOF.
-        $deadline = microtime(true) + 5;
-        do {
-            $status = proc_get_status($process);
-            if (!$status['running']) {
-                break;
-            }
-            usleep(10000);
-        } while (microtime(true) < $deadline);
-        if ($status['running']) {
-            proc_terminate($process);
-        }
-        fclose($pipes[0]);
-        $closedCode = proc_close($process);
-        $output = file_get_contents($stdout);
-        $error = file_get_contents($stderr);
-        unlink($stdout);
-        unlink($stderr);
-        $this->assertFalse($status['running'], 'CLI timed out while STDIN remained open.');
-        return [$status['exitcode'] >= 0 ? $status['exitcode'] : $closedCode, $output, $error];
-    }
 }
