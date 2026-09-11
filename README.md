@@ -99,6 +99,9 @@ Your `notes` table now exists. Applied versions are recorded automatically in
 `schema_migrations`, so running the command again skips them. Commit migration
 files alongside your application code; create a new migration for each new change.
 
+The package validates history structure before migration SQL and rejects files
+whose names conflict with an already recorded version. See [history validation](docs/usage.md#history-validation).
+
 To undo this example, including its table and any notes stored in it:
 
 ```sh

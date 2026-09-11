@@ -17,7 +17,10 @@ final class MigrationRollbackTest extends MigrationManagerTestCase
         $version = substr(basename($path), 0, 14);
         $db = $this->createConnectionMock();
         $db->method('getDatabaseName')->willReturn('unit_database');
-        $db->method('fetchAll')->willReturn([['version' => $version]]);
+        $db->method('fetchAll')->willReturnCallback(function ($sql) use ($version, $path) {
+            return $this->historyResult($sql, [['version' => $version,
+                'migration_name' => substr(basename($path), 15, -4)]]);
+        });
         $db->expects($this->exactly(2))->method('fetchValue')->withConsecutive(
             ['SELECT GET_LOCK(?, ?)', $this->isType('array')],
             ['SELECT RELEASE_LOCK(?)', $this->isType('array')]
@@ -66,7 +69,9 @@ final class MigrationRollbackTest extends MigrationManagerTestCase
             }
             return 1;
         });
-        $db->method('fetchAll')->willReturn([['version' => '20260714120000']]);
+        $db->method('fetchAll')->willReturnCallback(function ($sql) use ($name) {
+            return $this->historyResult($sql, [['version' => '20260714120000', 'migration_name' => $name]]);
+        });
         $failure = new ConnectionException('Primary failure');
         $db->method('execute')->willReturnCallback(static function ($sql) use ($point, $failure): void {
             if ($sql === 'DOWN SQL' && $point === 'down') {

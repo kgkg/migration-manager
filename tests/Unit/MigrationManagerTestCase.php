@@ -11,6 +11,23 @@ use SplFileInfo;
 
 abstract class MigrationManagerTestCase extends TestCase
 {
+    protected function historyResult(string $sql, array $rows = []): array
+    {
+        if (strpos($sql, 'information_schema.columns c') !== false) {
+            $result = [];
+            foreach (['version' => 'varchar(14)', 'migration_name' => 'varchar(255)',
+                'executed_at' => 'datetime', 'execution_time_ms' => 'int unsigned'] as $name => $type) {
+                $result[] = ['COLUMN_NAME' => $name, 'COLUMN_TYPE' => $type, 'IS_NULLABLE' => 'NO',
+                    'EXTRA' => '', 'ENGINE' => 'InnoDB', 'CHARACTER_SET_NAME' => 'utf8mb4'];
+            }
+            return $result;
+        }
+        if (strpos($sql, 'information_schema.statistics') !== false) {
+            return [['INDEX_NAME' => 'PRIMARY', 'COLUMN_NAME' => 'version', 'SEQ_IN_INDEX' => 1, 'SUB_PART' => null]];
+        }
+        return $rows;
+    }
+
     protected function createConnectionMock(): \PHPUnit\Framework\MockObject\MockObject
     {
         $mock = $this->createMock(\Kgkg\MigrationManager\Connection\ConnectionInterface::class);

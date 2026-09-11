@@ -47,12 +47,12 @@ final class MigrationManagerTest extends MigrationManagerTestCase
         $database->expects($this->never())->method('executePrepared');
         $database->expects($this->never())->method('getDatabaseName');
         $database->expects($this->once())->method('fetchValue')->willReturn(1);
-        $database->expects($this->once())
+        $database->expects($this->exactly(3))
             ->method('fetchAll')
-            ->willReturn([
-                ['version' => '20260714120000'],
-                ['version' => '20260714120002'],
-            ]);
+            ->willReturnCallback(function ($sql) { return $this->historyResult($sql, [
+                ['version' => '20260714120000', 'migration_name' => 'create_users'],
+                ['version' => '20260714120002', 'migration_name' => 'create_clans'],
+            ]); });
 
         // when
         $pending = (new MigrationManager($database, $this->temporaryDirectory))->getPending();

@@ -24,6 +24,8 @@ final class MysqliConnectionTest extends TestCase
             [array_replace($valid, ['port' => 0])], [array_replace($valid, ['port' => 65536])],
             [array_replace($valid, ['charset' => []])], [array_replace($valid, ['extra' => true])],
             [array_replace($valid, ['username' => "bad\0name"])],
+            [array_replace($valid, ['host' => 'p:127.0.0.1'])],
+            [array_replace($valid, ['host' => 'P:localhost'])],
             [array_replace($valid, ['ssl_ca' => null])],
             [array_replace($valid, ['ssl_ca' => false])],
             [array_replace($valid, ['ssl_ca' => ''])],

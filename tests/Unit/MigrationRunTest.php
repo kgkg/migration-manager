@@ -80,7 +80,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
             ->willReturnOnConsecutiveCalls(1, $releaseResult, 1, 1);
         $db->expects($this->exactly(2))->method('execute')->with(
             $this->stringContains('CREATE TABLE IF NOT EXISTS `' . $table . '`'));
-        $db->method('fetchAll')->willReturn([]);
+        $db->method('fetchAll')->willReturnCallback(function ($sql) { return $this->historyResult($sql); });
         $manager = new MigrationManager($db, $this->temporaryDirectory, $table, 1);
         try {
             $manager->runPending();
@@ -105,7 +105,7 @@ final class MigrationRunTest extends MigrationManagerTestCase
             ['SELECT GET_LOCK(?, ?)', $this->isType('array')],
             ['SELECT RELEASE_LOCK(?)', $this->isType('array')]
         )->willReturn(1);
-        $db->method('fetchAll')->willReturn([]);
+        $db->method('fetchAll')->willReturnCallback(function ($sql) { return $this->historyResult($sql); });
         $db->expects($this->never())->method('executePrepared');
         $this->expectException(MigrationException::class);
         $this->expectExceptionMessage('must declare class');
@@ -153,7 +153,10 @@ final class MigrationRunTest extends MigrationManagerTestCase
             }
         );
         $db->method('fetchAll')->willReturnCallback(
-            function () use (&$events, $failurePoint, $failure): array {
+            function ($sql) use (&$events, $failurePoint, $failure): array {
+                if (strpos($sql, 'information_schema.') !== false) {
+                    return $this->historyResult($sql);
+                }
                 $events[] = 'read';
                 if ($failurePoint === 'read') {
                     throw $failure;

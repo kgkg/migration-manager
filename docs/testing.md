@@ -35,6 +35,38 @@ removed in a finally block.
 
 ## Recorded results
 
+### TLS pool and history audit fixes — 2026-09-11
+
+Windows/MySQL 8.4.9 checks passed on both PHP 7.4.33 and 8.1.31:
+215 unit tests / 726 assertions and 76 integration tests / 568 assertions.
+The installed Composer consumer cycle passed on both PHP versions. Linux/PHP 8.4
+verification remains with the existing CI matrix and was not run locally.
+
+Regression tests now cover:
+
+- A real MySQLi persistent TLS connection seeded in the pool, followed by a factory
+  request with another CA: the `p:` host is rejected before any pooled connection
+  can be reused. Ordinary verified TLS remains covered by the existing tests.
+- A different filename under an applied version: show, run and multi-step rollback
+  fail before any new SQL/down method, preserve data/history and release locks.
+- Seven incompatible history definitions: missing column, missing primary key,
+  shortened name column, nullable timestamp, MyISAM engine, extra unique index
+  and extra required column. Both the first run and a retry leave data untouched.
+- The original valid four-column history remains readable without an upgrade.
+  A trigger-induced history write error continues to exercise failures after SQL,
+  since schema validation cannot prevent every runtime database error.
+
+Post-change review covered persistent connection reuse, history identity checks,
+schema metadata validation, rollback preflight, exception cleanup and installed
+consumer behavior. No additional actionable vulnerability was confirmed in that
+review. Remaining limits are explicit: migration files are trusted executable PHP;
+same-name content changes are not checksummed; MySQL DDL and history writes are
+not guaranteed atomic. Existing schemas are validated, never automatically altered.
+
+One PHP 7.4 unit run intermittently printed a shebang in the entrypoint test;
+the unchanged test passed on the subsequent full run. This environment has CLI
+OPcache enabled; the underlying cause of that intermittent output was not proven.
+
 ### Second audit fixes — 2026-09-10
 
 Verified on Windows with MySQL 8.4.9, PHP 7.4.33 and PHP 8.1.31:
@@ -94,7 +126,7 @@ its CA and server certificate, and `server-key.pem` as its key. Set
 `MIGRATION_MANAGER_TEST_TLS_DIR` to the absolute fixture directory, alongside
 the ordinary integration settings. Certificates expire after two days; regenerate
 them before reuse. Never use these test certificates outside the test server.
-Without this variable the two TLS integration tests are explicitly skipped.
+Without this variable the TLS integration tests are explicitly skipped.
 CI generates fresh certificates, reloads the service's TLS configuration and
 sets the variable for every matrix job.
 

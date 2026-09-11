@@ -11,6 +11,63 @@ use Kgkg\MigrationManager\Tests\Unit\MigrationManagerTestCase;
 
 final class MigrationManagerTest extends MigrationManagerTestCase
 {
+    /** @dataProvider identityOperations */
+    public function test_changed_identity_fails_before_any_migration_work(string $operation): void
+    {
+        $this->db->execute("CREATE TABLE `{$this->effects}` (id INT)");
+        $first = $this->migration('20260101000000', "INSERT INTO `{$this->effects}` VALUES (1)",
+            '$this->execute("DELETE FROM ' . $this->effects . '");');
+        $this->migration('20260101000001', "INSERT INTO `{$this->effects}` VALUES (2)",
+            '$this->execute("DELETE FROM ' . $this->effects . '");');
+        $manager = $this->manager();
+        $manager->runPending();
+        rename($first, $this->temporaryDirectory . '/20260101000000_other_branch.php');
+        // A new pending migration must also remain untouched on run.
+        $this->migration('20260101000002', "INSERT INTO `{$this->effects}` VALUES (3)");
+        try {
+            $operation === 'rollback' ? $manager->rollback(2) : $manager->{$operation}();
+            $this->fail('Changed identity must be rejected.');
+        } catch (MigrationException $error) {
+            $this->assertStringContainsString('identity mismatch', $error->getMessage());
+        }
+        $this->assertSame(2, (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+        $this->assertSame(2, (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->table}`"));
+        $this->assertLockReleased();
+    }
+
+    public function identityOperations(): array
+    {
+        return [['runPending'], ['getPending'], ['rollback']];
+    }
+
+    /** @dataProvider incompatibleSchemas */
+    public function test_incompatible_history_is_rejected_before_up_and_on_retry(string $alter): void
+    {
+        $this->db->execute("CREATE TABLE `{$this->effects}` (id INT)");
+        (new MigrationHistory($this->db, $this->table))->ensureExists();
+        $this->db->execute("ALTER TABLE `{$this->table}` " . $alter);
+        $this->migration('20260101000000', "INSERT INTO `{$this->effects}` VALUES (1)");
+        for ($attempt = 0; $attempt < 2; $attempt++) {
+            try {
+                $this->manager()->runPending();
+                $this->fail('Incompatible history must be rejected.');
+            } catch (MigrationException $error) {
+                $this->assertStringContainsString('Incompatible migration history', $error->getMessage());
+            }
+            $this->assertSame(0, (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->effects}`"));
+            $this->assertSame(0, (int)$this->db->fetchValue("SELECT COUNT(*) FROM `{$this->table}`"));
+            $this->assertLockReleased();
+        }
+    }
+
+    public function incompatibleSchemas(): array
+    {
+        return [['DROP COLUMN migration_name'], ['DROP PRIMARY KEY'],
+            ['MODIFY migration_name VARCHAR(10) NOT NULL'],
+            ['MODIFY executed_at DATETIME NULL'], ['ENGINE=MyISAM'],
+            ['ADD UNIQUE KEY extra_unique (migration_name)'], ['ADD extra_required INT NOT NULL']];
+    }
+
     /** @dataProvider unsafeSessions */
     public function test_unsafe_session_is_rejected_without_committing_caller_work(string $state, string $operation): void
     {
@@ -145,7 +202,7 @@ final class MigrationManagerTest extends MigrationManagerTestCase
             . 'execution_time_ms INT UNSIGNED NOT NULL) ENGINE=InnoDB');
         $this->db->executePrepared("INSERT INTO `{$this->table}` VALUES (?, ?, ?, ?)",
             ['20260714120000', 'legacy_migration', '2026-07-14 12:00:00', 12]);
-        $this->migration('20260714120000', 'INVALID SQL');
+        $this->writeMigrationFile('20260714120000_legacy_migration.php');
         $this->migration('20260714120001', "CREATE TABLE `{$this->effects}` (id INT PRIMARY KEY); "
             . "INSERT INTO `{$this->effects}` VALUES (1)");
         $this->migration('20260714120002', "INSERT INTO `{$this->effects}` VALUES (2)");
@@ -175,7 +232,8 @@ final class MigrationManagerTest extends MigrationManagerTestCase
     {
         if ($failure === 'history') {
             (new MigrationHistory($this->db, $this->table))->ensureExists();
-            $this->db->execute("ALTER TABLE `{$this->table}` DROP COLUMN execution_time_ms");
+            $this->db->execute("CREATE TRIGGER `{$this->table}_reject` BEFORE INSERT ON `{$this->table}` "
+                . "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'History write rejected'");
         }
         $sql = "CREATE TABLE `{$this->effects}` (id INT); INSERT INTO `{$this->effects}` VALUES (1)";
         if ($failure === 'first_sql') {

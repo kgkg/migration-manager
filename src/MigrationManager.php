@@ -41,7 +41,7 @@ final class MigrationManager
             $this->history->ensureExists();
             $executed = [];
 
-            foreach ($this->findPending($this->history->getAppliedVersions()) as $file) {
+            foreach ($this->findPending($this->history->getAppliedMigrations()) as $file) {
                 $startedAt = microtime(true);
                 $migration = $this->repository->load($file, $this->database);
                 $migration->up();
@@ -67,7 +67,7 @@ final class MigrationManager
     public function getPending(): array
     {
         $appliedVersions = $this->history->exists()
-            ? $this->history->getAppliedVersions()
+            ? $this->history->getAppliedMigrations()
             : [];
 
         return $this->findPending($appliedVersions);
@@ -93,16 +93,24 @@ final class MigrationManager
                 $filesByVersion[$file->getVersion()] = $file;
             }
 
-            $versions = array_reverse(array_keys($this->history->getAppliedVersions()));
+            $applied = $this->history->getAppliedMigrations();
+            $versions = array_reverse(array_keys($applied));
             $versions = array_slice($versions, 0, $steps);
             $rolledBack = [];
 
+            // Validate every selected identity before any down() can mutate data.
             foreach ($versions as $version) {
                 $version = (string)$version;
-                if (isset($filesByVersion[$version]) === false) {
+                if (isset($filesByVersion[$version])) {
+                    $this->assertIdentity($filesByVersion[$version], $applied);
+                }
+            }
+
+            foreach ($versions as $version) {
+                $version = (string)$version;
+                if (!isset($filesByVersion[$version])) {
                     throw new MigrationException("Missing file for applied migration {$version}.");
                 }
-
                 $file = $filesByVersion[$version];
                 $startedAt = microtime(true);
                 $migration = $this->repository->load($file, $this->database);
@@ -122,19 +130,31 @@ final class MigrationManager
     }
 
     /**
-     * @param array<string, bool> $appliedVersions
+     * @param array<string, string> $appliedVersions
      * @return MigrationFile[]
      */
     private function findPending(array $appliedVersions): array
     {
+        $files = $this->repository->findAll();
+        foreach ($files as $file) {
+            $this->assertIdentity($file, $appliedVersions);
+        }
         return array_values(
             array_filter(
-                $this->repository->findAll(),
+                $files,
                 static function (MigrationFile $file) use ($appliedVersions): bool {
                     return isset($appliedVersions[$file->getVersion()]) === false;
                 }
             )
         );
+    }
+
+    private function assertIdentity(MigrationFile $file, array $applied): void
+    {
+        if (isset($applied[$file->getVersion()]) && $applied[$file->getVersion()] !== $file->getName()) {
+            throw new MigrationException('Migration identity mismatch for version ' . $file->getVersion()
+                . ': history records ' . $applied[$file->getVersion()] . ', file is ' . $file->getName() . '.');
+        }
     }
 
     /** Run history and migration work while holding this session's advisory lock. */

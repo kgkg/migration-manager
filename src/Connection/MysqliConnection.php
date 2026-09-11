@@ -32,6 +32,9 @@ final class MysqliConnection implements ConnectionInterface
         if (!is_int($parameters['port']) || $parameters['port'] < 1 || $parameters['port'] > 65535) {
             throw new ConnectionException('Connection port must be an integer between 1 and 65535.');
         }
+        if (strncasecmp($parameters['host'], 'p:', 2) === 0) {
+            throw new ConnectionException('Persistent connections are not supported. Remove the p: host prefix.');
+        }
         if (array_diff(array_keys($parameters), ['host', 'port', 'database', 'username', 'password', 'charset', 'ssl_ca'])) {
             throw new ConnectionException('Unknown connection parameter.');
         }

@@ -8,6 +8,22 @@ use PHPUnit\Framework\TestCase;
 
 final class TlsConnectionTest extends TestCase
 {
+    public function test_persistent_pool_cannot_bypass_new_ca_verification(): void
+    {
+        $parameters = $this->parameters('server');
+        $native = mysqli_init();
+        $native->ssl_set(null, null, $parameters['ssl_ca'], null, null);
+        $native->real_connect('p:' . $parameters['host'], $parameters['username'], $parameters['password'],
+            $parameters['database'], $parameters['port'], null,
+            MYSQLI_CLIENT_SSL | MYSQLI_CLIENT_SSL_VERIFY_SERVER_CERT);
+        $native->close();
+        $parameters = $this->parameters('untrusted');
+        $parameters['host'] = 'p:' . $parameters['host'];
+        $this->expectException(ConnectionException::class);
+        $this->expectExceptionMessage('Persistent connections are not supported');
+        MysqliConnection::connect($parameters);
+    }
+
     private function parameters(string $certificate): array
     {
         $directory = getenv('MIGRATION_MANAGER_TEST_TLS_DIR');

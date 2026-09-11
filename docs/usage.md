@@ -60,6 +60,29 @@ verification. Omitting `ssl_ca` preserves the existing connection behavior and
 does not require TLS. For client certificates or other custom native options,
 configure a `mysqli` instance and pass it to the adapter constructor.
 
+The factory rejects persistent hosts (`p:` prefix), even without `ssl_ca`.
+MySQLi can reuse pooled connections without applying a new CA configuration.
+Use a normal host for a fresh connection; security settings of a borrowed native
+connection remain the application's responsibility.
+
+### History validation
+
+Existing history must have the package's four-column InnoDB schema: non-null
+`version VARCHAR(14)`, `migration_name VARCHAR(255)`, `executed_at DATETIME`, and
+`execution_time_ms INT UNSIGNED`; string columns use utf8mb4. The only unique
+index must be the full-column primary key on `version`. Extra columns, generated
+columns and incompatible definitions are rejected before migration SQL. The
+package never alters an existing table to make it compatible; configure another
+`table_name` if an unrelated tool already uses that table. Valid existing package
+history requires no upgrade or new columns.
+
+`show`, `run` and selected rollback steps compare filenames with the original
+`migration_name` for each applied version. A changed name is an error, not a
+pending migration or a valid rollback target. All selected rollback identities
+are checked before the first `down()`. Keep applied filenames and contents
+unchanged: this format does not store content checksums, so edits under the
+same version and name are not detected.
+
 Generated migrations use literal directory paths, including brackets such as
 `app[1]`. Existing files are never overwritten. Reserved PHP class names (for
 example `class`, `string`, `match`) are rejected before creating a file;
