@@ -21,6 +21,8 @@ return [
         ]);
     },
 
+    // History table in the configured database; this is also the default if omitted.
+    // Created automatically by run/rollback if missing. Choose before the first run.
     'table_name' => 'schema_migrations',
     'lock_timeout' => 0,
 

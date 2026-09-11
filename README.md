@@ -37,6 +37,7 @@ use Kgkg\MigrationManager\Connection\MysqliConnection;
 
 return [
     'migrations_path' => 'db/migrations',
+    'table_name' => 'schema_migrations',
     'connection' => static function (): MysqliConnection {
         return MysqliConnection::connect([
             'host' => '127.0.0.1',
@@ -49,6 +50,11 @@ return [
     },
 ];
 ```
+
+`table_name` selects the migration history table in the configured database.
+It defaults to `schema_migrations` when omitted. Set it to another name, such as
+`my_app_migrations`, if needed. Choose the name before the first run: changing it
+later selects a different history table and may cause applied migrations to run again.
 
 Keep real credentials out of version control. The generated configuration also
 supports process environment variables `DB_HOST`, `DB_PORT`, `DB_DATABASE`,
@@ -94,6 +100,12 @@ Creating a migration does not require a database connection.
 vendor/bin/migration-manager show
 vendor/bin/migration-manager run
 ```
+
+`run` automatically creates the configured history table if it does not exist,
+after acquiring the migration lock and before executing migration SQL. `rollback`
+also creates it if missing, even when there is nothing to roll back. `init`,
+`create`, `show` and Composer installation do not create this table. You do not
+need to create it manually; the database itself must already exist.
 
 Your `notes` table now exists. Applied versions are recorded automatically in
 `schema_migrations`, so running the command again skips them. Commit migration
